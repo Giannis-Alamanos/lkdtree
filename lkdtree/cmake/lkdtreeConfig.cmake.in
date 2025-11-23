@@ -1,0 +1,19 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# bake producer options into the package
+set(LKDTREE_HEADER_ONLY @LKDTREE_HEADER_ONLY@)
+set(LKDTREE_USE_OPENMP  @LKDTREE_USE_OPENMP@)
+
+# pull deps only when needed
+if(NOT LKDTREE_HEADER_ONLY)
+  find_dependency(PCL REQUIRED COMPONENTS common)
+endif()
+
+if(LKDTREE_USE_OPENMP)
+  find_dependency(OpenMP COMPONENTS CXX)
+endif()
+
+# load exported targets
+include("${CMAKE_CURRENT_LIST_DIR}/lkdtreeTargets.cmake")
