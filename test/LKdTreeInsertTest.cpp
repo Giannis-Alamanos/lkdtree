@@ -1101,6 +1101,141 @@ TEST(LKdTreeInsertMaintain3D, GlobalRebuildTriggeredByMaxAllowedSize) {
 }
 
 // -----------------------------------------------------------------------------
+// allow_global_rebuild = false: size cap does not rebuild, nothing is dropped
+// -----------------------------------------------------------------------------
+TEST(LKdTreeInsertMaintain3D, GlobalRebuildBySizeDisabled) {
+  Tree3D tree(8);
+
+  const std::size_t N = 50;
+  for (std::size_t i = 0; i < N; ++i)
+    tree.insert(Point3D{static_cast<float>(i), 0.1f * static_cast<float>(i), 0.f});
+
+  const uint64_t next_before = tree.nextInsertId();
+
+  tree.insertMaintain(
+      Point3D{-999.f, 3.14f, 2.71f},
+      /*local_rebuild_ratio=*/1000.f,
+      /*min_subtree=*/1, /*max_subtree=*/1'000'000,
+      /*fill_ratio=*/0.7f,
+      /*keep_recent_limit=*/64,
+      /*max_allowed_size=*/N - 3,          // would trigger if allowed
+      /*high_imbalance_limit=*/1e9f,
+      /*full_rebuild_size=*/7,
+      /*point_num_parallel_thr=*/2500,
+      /*point_num_task_thr=*/5000,
+      /*num_threads=*/2,
+      /*allow_global_rebuild=*/false);
+
+  EXPECT_EQ(tree.size(), N + 1);
+  EXPECT_EQ(tree.nextInsertId(), next_before + 1);
+
+  auto ids = collectAllIdsAndAssertAlignment(tree);
+  ASSERT_EQ(ids.size(), N + 1);
+  for (uint64_t id = 0; id <= next_before; ++id)
+    EXPECT_EQ(ids.count(id), 1u) << "Missing id with global rebuild disabled: " << id;
+
+  EXPECT_TRUE(CheckSubtreeSizes(tree));
+}
+
+// -----------------------------------------------------------------------------
+// allow_global_rebuild: severe-imbalance trigger fires when allowed, not otherwise
+// -----------------------------------------------------------------------------
+TEST(LKdTreeInsertMaintain3D, GlobalRebuildByImbalanceRespectsFlag) {
+  // Monotonic inserts leave the root heavily right-skewed.
+  const std::size_t N = 50;
+  const std::size_t full_keep = 7;
+  auto make_tree = [&] {
+    auto t = std::make_unique<Tree3D>(8);
+    for (std::size_t i = 0; i < N; ++i)
+      t->insert(Point3D{static_cast<float>(i), 0.f, 0.f});
+    return t;
+  };
+  auto insert_right = [&](Tree3D& t, bool allow) {
+    t.insertMaintain(
+        Point3D{999.f, 0.f, 0.f},              // routes to the larger side
+        /*local_rebuild_ratio=*/1000.f,
+        /*min_subtree=*/1'000'000, /*max_subtree=*/2'000'000,  // no local rebuild
+        /*fill_ratio=*/0.7f,
+        /*keep_recent_limit=*/64,
+        /*max_allowed_size=*/1'000'000,        // no global-by-size
+        /*high_imbalance_limit=*/1.5f,         // global-by-imbalance if allowed
+        /*full_rebuild_size=*/full_keep,
+        /*point_num_parallel_thr=*/1,
+        /*point_num_task_thr=*/1,
+        /*num_threads=*/1,
+        allow);
+  };
+
+  auto allowed = make_tree();
+  insert_right(*allowed, true);
+  EXPECT_EQ(allowed->size(), full_keep + 1) << "Control: imbalance should force a global rebuild";
+  EXPECT_TRUE(CheckSubtreeSizes(*allowed));
+
+  auto disabled = make_tree();
+  insert_right(*disabled, false);
+  EXPECT_EQ(disabled->size(), N + 1);
+  EXPECT_EQ(collectAllIdsAndAssertAlignment(*disabled).size(), N + 1);
+  EXPECT_EQ(disabled->nextInsertId(), N + 1);
+  EXPECT_TRUE(CheckSubtreeSizes(*disabled));
+}
+
+// -----------------------------------------------------------------------------
+// insertPointCloudMaintain honours allow_global_rebuild = false
+// -----------------------------------------------------------------------------
+TEST(LKdTreeInsertPointCloudMaintain3D, GlobalRebuildDisabled) {
+  Tree3D tree(8);
+
+  pcl::PointCloud<Point3D> pc;
+  const std::size_t count = 200;
+  for (std::size_t i = 0; i < count; ++i)
+    pc.points.emplace_back(Point3D{static_cast<float>(i), 0.f, 0.f});
+
+  tree.insertPointCloudMaintain(
+      pc,
+      /*local_rebuild_ratio=*/1000.0f,
+      /*min_subtree_for_local_rebuild=*/1'000'000,
+      /*max_subtree_for_local_rebuild=*/2'000'000,
+      /*fill_ratio=*/0.7f,
+      /*keep_recent_limit=*/64,
+      /*max_allowed_size=*/20,               // would cap the tree if allowed
+      /*high_imbalance_limit=*/1.5f,         // would fire on monotonic input
+      /*full_rebuild_size=*/10,
+      /*point_num_parallel_thr=*/1,
+      /*point_num_task_thr=*/1,
+      /*num_threads=*/1,
+      /*allow_global_rebuild=*/false);
+
+  EXPECT_EQ(tree.size(), count);
+  EXPECT_EQ(tree.nextInsertId(), count);
+  EXPECT_TRUE(CheckSubtreeSizes(tree));
+}
+
+// -----------------------------------------------------------------------------
+// nextInsertId(): counts accepted points, skips invalid ones, survives clear()
+// -----------------------------------------------------------------------------
+TEST(LKdTreeInsert3D, NextInsertIdTracksAcceptedPoints) {
+  Tree3D tree(8);
+  EXPECT_EQ(tree.nextInsertId(), 0u);
+
+  tree.insert(Point3D{1.f, 2.f, 3.f});
+  tree.insert(Point3D{4.f, 5.f, 6.f});
+  tree.insert(Point3D{7.f, 8.f, 9.f});
+  EXPECT_EQ(tree.nextInsertId(), 3u);
+  EXPECT_EQ(tree.nextInsertId(), tree.next_insert_id_);
+
+  tree.insert(Point3D{std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f});
+  EXPECT_EQ(tree.nextInsertId(), 3u) << "Invalid point must not consume an ID";
+
+  auto ids = collectAllIdsAndAssertAlignment(tree);
+  EXPECT_EQ(ids.count(tree.nextInsertId() - 1), 1u) << "Last inserted ID is nextInsertId() - 1";
+
+  tree.clear();
+  EXPECT_EQ(tree.nextInsertId(), 3u) << "clear() does not reset the ID counter";
+  tree.insert(Point3D{0.f, 0.f, 0.f});
+  EXPECT_EQ(tree.nextInsertId(), 4u);
+}
+
+// -----------------------------------------------------------------------------
 // insertPointCloudMaintain — inserts all valid points, no rebuild path (3D)
 // -----------------------------------------------------------------------------
 TEST(LKdTreeInsertPointCloudMaintain3D, InsertsOnlyValidPoints)

@@ -44,7 +44,8 @@
   template void LKdTree<PointT,K>                                                         \
     ::insertPointCloudMaintain<pcl::PointCloud<PointT>>(                                  \
         pcl::PointCloud<PointT> const&, float, std::size_t, std::size_t, float,           \
-        std::size_t, std::size_t, float, std::size_t, std::size_t, std::size_t, int);    \
+        std::size_t, std::size_t, float, std::size_t, std::size_t, std::size_t, int,     \
+        bool);                                                                            \
   template std::vector<std::vector<PointT const*>>                                        \
     LKdTree<PointT,K>::knnSearchBatch<std::vector<PointT>>(                               \
         std::vector<PointT> const&, std::size_t, float, int) const;                       \

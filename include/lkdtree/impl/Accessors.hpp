@@ -41,7 +41,13 @@ inline std::size_t LKdTree<PointT, k>::maxDepth() const noexcept {
 }  
 
 template <typename PointT, std::size_t k>
-inline bool LKdTree<PointT, k>::isBalancing() const noexcept { 
+inline uint64_t LKdTree<PointT, k>::nextInsertId() const noexcept {
+  std::shared_lock lock(tree_mtx_);
+  return next_insert_id_;
+}
+
+template <typename PointT, std::size_t k>
+inline bool LKdTree<PointT, k>::isBalancing() const noexcept {
   return balancing_.load(std::memory_order_acquire);   
 }
 

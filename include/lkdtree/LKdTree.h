@@ -159,6 +159,12 @@ class LKdTree {
    * @param[in] num_threads
    *   Number of threads for the parallel slack builder. If <= 0, uses
    *   `omp_get_max_threads()`. Ignored if OpenMP is not available.
+   * @param[in] allow_global_rebuild
+   *   If `false`, global rebuilds are disabled: neither exceeding
+   *   @p max_allowed_size nor exceeding @p high_imbalance_limit rebuilds the
+   *   root, so no points are discarded by the global keep-recent policy and the
+   *   tree size is not capped. Local rebuilds are unaffected. The global
+   *   parameters are still validated. Defaults to `true`.
    *
    * @note Thread-safety: this method acquires an exclusive lock; concurrent
    *       readers of query APIs are blocked during the short critical section.
@@ -181,7 +187,8 @@ class LKdTree {
                       std::size_t full_rebuild_size,
                       std::size_t point_num_parallel_thr,
                       std::size_t point_num_task_thr,
-                      int num_threads = 1);
+                      int num_threads = 1,
+                      bool allow_global_rebuild = true);
 
   /**
    * @brief Inserts an entire point cloud into the KD-tree.
@@ -261,6 +268,9 @@ class LKdTree {
    * @param[in] num_threads
    *   Number of threads for the parallel slack builder. If <= 0, uses
    *   `omp_get_max_threads()`. Ignored if OpenMP is not available.
+   * @param[in] allow_global_rebuild
+   *   If `false`, global rebuilds are disabled (see insertMaintain()).
+   *   Defaults to `true`.
    *
    * @note Thread-safety: this method acquires an exclusive lock; concurrent
    *       readers of query APIs are blocked during the short critical section.
@@ -271,8 +281,8 @@ class LKdTree {
    * @warning Passing invalid arguments (e.g. ratios <= 1, non-positive sizes,
    *          fill_ratio out of (0,1]) causes the call to return early without
    *          modifying the tree (a diagnostic is printed to `std::cerr`).
-   */  
-  template <PointCloudLike<PointT> PointCloud>  
+   */
+  template <PointCloudLike<PointT> PointCloud>
   void insertPointCloudMaintain(const PointCloud& point_cloud,
                       float local_rebuild_ratio,
                       std::size_t min_subtree_for_local_rebuild,
@@ -284,7 +294,8 @@ class LKdTree {
                       std::size_t full_rebuild_size,
                       std::size_t point_num_parallel_thr,
                       std::size_t point_num_task_thr,
-                      int num_threads = 1);
+                      int num_threads = 1,
+                      bool allow_global_rebuild = true);
 
   /**
    * @brief Build a balanced tree directly from a point cloud.
@@ -592,6 +603,16 @@ class LKdTree {
   [[nodiscard]] std::size_t maxDepth() const noexcept;
 
   /**
+   * @brief Get the insertion ID that the next inserted point will receive.
+   *
+   * IDs increase monotonically and are never reused, so the last inserted point
+   * has ID `nextInsertId() - 1`.
+   *
+   * @return uint64_t The ID of the next point to be inserted.
+   */
+  [[nodiscard]] uint64_t nextInsertId() const noexcept;
+
+  /**
    * @brief Check if the tree is currently undergoing a rebalancing operation.
    *
    * This method returns true if the tree is being rebalanced asynchronously and false otherwise.
@@ -718,6 +739,7 @@ class LKdTree {
    * @param[in]     point_num_parallel_thr Min workload to create an OpenMP team (slack builder).
    * @param[in]     point_num_task_thr     Min subproblem size to spawn tasks (slack builder).
    * @param[in]     num_threads       Thread count for parallel builder (ignored if no OpenMP).
+   * @param[in]     allow_global_rebuild If false, neither global trigger rebuilds the root.
    */
   void insertMaintain(NodePtr& slot, const PointT& pt,
                       std::size_t depth, float local_imbalance,
@@ -725,7 +747,8 @@ class LKdTree {
                       float fill_ratio, std::size_t keep_recent_limit,
                       std::size_t max_allowed_size, float high_imbalance_limit,
                       std::size_t full_rebuild_size, std::size_t point_num_parallel_thr,
-                      std::size_t point_num_task_thr, int num_threads);
+                      std::size_t point_num_task_thr, int num_threads,
+                      bool allow_global_rebuild);
 
   /**
    * @brief Recursive helper for erase().

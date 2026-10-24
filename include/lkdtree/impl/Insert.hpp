@@ -49,7 +49,8 @@ void LKdTree<PointT,k>::insertMaintain(const PointT& pt, float local_rebuild_rat
                                float fill_ratio, std::size_t keep_recent_limit,
                                std::size_t max_allowed_size, float high_imbalance_limit,
                                std::size_t full_rebuild_size, std::size_t point_num_parallel_thr,
-                               std::size_t point_num_task_thr, int num_threads) 
+                               std::size_t point_num_task_thr, int num_threads,
+                               bool allow_global_rebuild)
 {
   if (!isFinitePoint(pt)) {
     std::cerr << "[LKdTree] Skipping invalid point with NaN or Inf (insertMaintain)" << '\n';
@@ -114,7 +115,8 @@ void LKdTree<PointT,k>::insertMaintain(const PointT& pt, float local_rebuild_rat
                  max_allowed_size,
                  high_imbalance_limit,
                  full_rebuild_size, point_num_parallel_thr,
-                 point_num_task_thr, num_threads);
+                 point_num_task_thr, num_threads,
+                 allow_global_rebuild);
 }
 
 // -----------------------------------------------------------------------------
@@ -155,7 +157,8 @@ void LKdTree<PointT,k>::insertPointCloudMaintain(const PointCloud& point_cloud, 
                                float fill_ratio, std::size_t keep_recent_limit,
                                std::size_t max_allowed_size, float high_imbalance_limit,
                                std::size_t full_rebuild_size, std::size_t point_num_parallel_thr,
-                               std::size_t point_num_task_thr, int num_threads) 
+                               std::size_t point_num_task_thr, int num_threads,
+                               bool allow_global_rebuild)
 {
   if (local_rebuild_ratio <= 1) {
     std::cerr << "[LKdTree] Local rebuild ratio must be greater than 1 (insertPointCloudMaintain)" << '\n';
@@ -224,7 +227,8 @@ void LKdTree<PointT,k>::insertPointCloudMaintain(const PointCloud& point_cloud, 
                   max_allowed_size,
                   high_imbalance_limit,
                   full_rebuild_size, point_num_parallel_thr,
-                  point_num_task_thr, num_threads);
+                  point_num_task_thr, num_threads,
+                  allow_global_rebuild);
   }
 }
 
@@ -336,8 +340,9 @@ void LKdTree<PointT,k>::insertMaintain(NodePtr& slot, const PointT& pt,
                                        float high_imbalance_limit,
                                        std::size_t full_rebuild_size,
                                        std::size_t point_num_parallel_thr,
-                                       std::size_t point_num_task_thr, 
-                                       int num_threads)
+                                       std::size_t point_num_task_thr,
+                                       int num_threads,
+                                       bool allow_global_rebuild)
 {
   // Build a new root from the most recent points.
   auto rebuild_root_keep_last = [&]()
@@ -378,7 +383,7 @@ void LKdTree<PointT,k>::insertMaintain(NodePtr& slot, const PointT& pt,
     points_at_last_rebuild_ = total_points_;
   };
 
-  if (total_points_ > max_allowed_size)
+  if (allow_global_rebuild && total_points_ > max_allowed_size)
   {
     rebuild_root_keep_last();
     return;
@@ -469,7 +474,7 @@ void LKdTree<PointT,k>::insertMaintain(NodePtr& slot, const PointT& pt,
     const float qv = PointTraits<PointT,k>::get(pt, cur->axis);
     const bool goes_left = (qv < cur->split_value);
 
-    if (cur->left && cur->right &&
+    if (allow_global_rebuild && cur->left && cur->right &&
         isImbalancedAfterInsert(cur, goes_left, high_imbalance_limit))
     {  
       rebuild_root_keep_last();

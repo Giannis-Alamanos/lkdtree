@@ -283,28 +283,11 @@ LKdTree<PointT,k>::knnSearch(const NodePtr& node,
     const Node* right = n->right.get();
     if (!left && !right) continue;  // should not happen, but be safe
 
-    // Plane filter first (cheap)
-    const float qv = PointTraits<PointT,k>::get(query, n->axis);
-    const float plane_d2 = (qv - n->split_value) * (qv - n->split_value);
-
     refresh_tau_from_heap();
-
-    bool may_visit_both = ( (use_small ? (sbuf_size < k_neigh) : (heap.size() < k_neigh)) || plane_d2 < tau );
 
     // Compute child AABB d2 and decide order (nearer first)
     float d2L = left  ? aabb_dist2(left)  : std::numeric_limits<float>::infinity();
     float d2R = right ? aabb_dist2(right) : std::numeric_limits<float>::infinity();
-
-    // If not allowed to visit both (plane test failed), keep only the likely side
-    if (!may_visit_both) {
-      if (d2L < d2R) {
-        if (d2L < tau) istack[sp++] = { left };
-      } 
-      else {
-        if (d2R < tau) istack[sp++] = { right };
-      }
-      continue;
-    }
 
     // Visit both sides that can beat tau; push farther first so nearer is popped next
     if (d2L <= d2R) {
@@ -660,21 +643,10 @@ void LKdTree<PointT,k>::knnSearchUnique(
     const Node* right = n->right.get();
     if (!left && !right) continue;
 
-    const float qv = PointTraits<PointT,k>::get(query, n->axis);
-    const float plane_d2 = (qv - n->split_value) * (qv - n->split_value);
-
     refresh_tau_from_heap();
-    bool may_visit_both = ( (use_small ? (sbuf_size < k_neigh) : (heap.size() < k_neigh))
-                            || plane_d2 < tau );
 
     float d2L = left  ? aabb_dist2(left)  : std::numeric_limits<float>::infinity();
     float d2R = right ? aabb_dist2(right) : std::numeric_limits<float>::infinity();
-
-    if (!may_visit_both) {
-      if (d2L < d2R) { if (d2L < tau) istack[sp++] = { left  }; }
-      else           { if (d2R < tau) istack[sp++] = { right }; }
-      continue;
-    }
 
     if (d2L <= d2R) {
       if (right && d2R < tau) istack[sp++] = { right };
